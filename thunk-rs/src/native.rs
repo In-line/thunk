@@ -46,10 +46,13 @@ pub fn get_or_download(
     );
     match compressed_type {
         CompressedType::SevenZip => {
-            sevenz_rust::decompress(reader, &unpack_dir).expect("Failed to decompress 7z archive");
+            sevenz_rust2::decompress(reader, &unpack_dir).expect("Failed to decompress 7z archive");
         }
         CompressedType::Zip => {
-            zip_extract::extract(reader, &unpack_dir, true).expect("Failed to extract zip archive");
+            zip::ZipArchive::new(reader)
+                .expect("Failed to read zip archive")
+                .extract(&unpack_dir)
+                .expect("Failed to extract zip archive");
         }
     }
 
