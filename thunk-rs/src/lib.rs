@@ -1,25 +1,49 @@
 #![doc = include_str!("../README.md")]
 
-use std::{env, io::Cursor, path::PathBuf, thread, time::Duration};
+use std::{env, path::PathBuf, thread};
 
-use anyhow::bail;
-use reqwest::blocking::Client;
+#[cfg(feature = "native-download")]
+mod native;
 
-const VC_LTL_DOWNLOAD_VERSION_DEFAULT: &'static str = "5.3.1";
-const YY_THUNKS_DOWNLOAD_VERSION_DEFAULT: &'static str = "1.1.9";
+#[cfg(all(feature = "external-download", not(feature = "native-download")))]
+mod external;
+
+#[cfg(feature = "native-download")]
+use native::get_or_download;
+
+#[cfg(all(feature = "external-download", not(feature = "native-download")))]
+use external::get_or_download;
+
+#[cfg(not(any(feature = "native-download", feature = "external-download")))]
+#[allow(unreachable_code)]
+fn get_or_download(
+    _env_path: &str,
+    _env_url: &str,
+    _default_url: &str,
+    _out_dir: &std::path::Path,
+    _unpack_name: &str,
+    _compressed_type: CompressedType,
+) -> PathBuf {
+    panic!(
+        "No extraction feature enabled! Enable either 'native-download' or 'external-download'."
+    );
+}
+
+const VC_LTL_DOWNLOAD_VERSION_DEFAULT: &str = "5.3.1";
+const YY_THUNKS_DOWNLOAD_VERSION_DEFAULT: &str = "1.1.9";
 
 /// This function should be call in build.rs.
-pub fn thunk() -> anyhow::Result<()> {
-    let target_os = env::var("CARGO_CFG_TARGET_OS")?;
-    let target_env = env::var("CARGO_CFG_TARGET_ENV")?;
+pub fn thunk() {
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap();
 
     if target_os != "windows" || target_env != "msvc" {
         println!("cargo::warning=Skipped! Only Windows(MSVC) is supported!");
-        return Ok(());
+        return;
     }
 
-    let target_arch = env::var("CARGO_CFG_TARGET_ARCH")?;
-    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     // Enable VC-LTL5
     let vc_ltl_arch = if target_arch == "x86" { "Win32" } else { "x64" };
@@ -41,7 +65,7 @@ pub fn thunk() -> anyhow::Result<()> {
         "6.0.6000.0"
     } else {
         println!("cargo::warning=VC-LTL5 Skipped: Nothing to do!");
-        return Ok(());
+        return;
     };
 
     thread::scope(|s| {
@@ -62,9 +86,9 @@ pub fn thunk() -> anyhow::Result<()> {
                 &out_dir,
                 &format!("VC-LTL-{}", vcltl_download_version),
                 CompressedType::SevenZip,
-            )?;
+            );
 
-            let vc_ltl_path = vc_ltl.join(&format!(
+            let vc_ltl_path = vc_ltl.join(format!(
                 "TargetPlatform/{}/lib/{}",
                 vc_ltl_platform, vc_ltl_arch
             ));
@@ -74,13 +98,12 @@ pub fn thunk() -> anyhow::Result<()> {
                 "cargo::warning=VC-LTL5 Enabled: {}({})",
                 vc_ltl_platform, vc_ltl_arch
             );
-            Ok::<_, anyhow::Error>(())
         });
 
         s.spawn(|| {
             if cfg!(feature = "vc_ltl_only") {
                 println!("cargo::warning=YY-Thunks Skipped: Nothing to do!!");
-                bail!("skipped");
+                return;
             }
 
             // Enable YY-Thunks
@@ -101,8 +124,7 @@ pub fn thunk() -> anyhow::Result<()> {
                 "Win10.0.19041"
             } else {
                 println!("cargo::warning=YY-Thunks Skipped: Nothing to do!!");
-                bail!("skipped");
-                // return Ok::<_, anyhow::Error>(());
+                return;
             };
 
             let yy_thunks_download_version =
@@ -114,11 +136,14 @@ pub fn thunk() -> anyhow::Result<()> {
             let yy_thunks = get_or_download(
                 "YY_THUNKS",
                 "YY_THUNKS_URL",
-                &format!("https://github.com/Chuyu-Team/YY-Thunks/releases/download/v{}/YY-Thunks-Objs.zip", yy_thunks_download_version),
+                &format!(
+                    "https://github.com/Chuyu-Team/YY-Thunks/releases/download/v{}/YY-Thunks-Objs.zip",
+                    yy_thunks_download_version
+                ),
                 &out_dir,
                 &format!("YY-Thunks-{}", yy_thunks_download_version),
                 CompressedType::Zip,
-            )?;
+            );
 
             let yy_thunks = yy_thunks.join(format!(
                 "objs/{}/YY_Thunks_for_{}.obj",
@@ -133,7 +158,7 @@ pub fn thunk() -> anyhow::Result<()> {
             // Return if is lib mode
             if cfg!(feature = "lib") {
                 println!("cargo::warning=Lib Mode Enabled!");
-                return Ok(());
+                return;
             }
 
             // Set subsystem to windows
@@ -147,55 +172,18 @@ pub fn thunk() -> anyhow::Result<()> {
                 ""
             };
 
-            if cfg!(feature = "subsystem_windows") && env::var("PROFILE")? != "debug" {
+            if cfg!(feature = "subsystem_windows") && env::var("PROFILE").unwrap() != "debug" {
                 println!("cargo::rustc-link-arg=/SUBSYSTEM:WINDOWS{}", os_version);
                 println!("cargo::rustc-link-arg=/ENTRY:mainCRTStartup");
                 println!("cargo::warning=Subsystem is set to WINDOWS");
             } else {
                 println!("cargo::rustc-link-arg=/SUBSYSTEM:CONSOLE{}", os_version);
             }
-            Ok(())
         });
     });
-    Ok(())
 }
 
-fn get_or_download(
-    env_path: &str,
-    env_url: &str,
-    default_url: &str,
-    out_dir: &PathBuf,
-    unpack_name: &str,
-    compressed_type: CompressedType,
-) -> anyhow::Result<PathBuf> {
-    if let Ok(env_path) = env::var(env_path) {
-        Ok(PathBuf::from(env_path))
-    } else {
-        let unpack_dir = out_dir.join(unpack_name);
-        if !unpack_dir.exists() {
-            let client = Client::builder()
-                .timeout(Duration::from_secs(10 * 60))
-                .build()?;
-            let reader = Cursor::new(
-                client
-                    .get(if let Ok(ref env_url) = env::var(env_url) {
-                        env_url
-                    } else {
-                        default_url
-                    })
-                    .send()?
-                    .bytes()?,
-            );
-            match compressed_type {
-                CompressedType::SevenZip => sevenz_rust::decompress(reader, &unpack_dir)?,
-                CompressedType::Zip => zip_extract::extract(reader, &unpack_dir, true)?,
-            }
-        }
-        Ok(unpack_dir)
-    }
-}
-
-enum CompressedType {
+pub(crate) enum CompressedType {
     SevenZip,
     Zip,
 }
