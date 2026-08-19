@@ -1,5 +1,7 @@
-use anyhow::Result;
+use std::fmt;
 use std::path::PathBuf;
+
+use anyhow::Result;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OS {
@@ -25,15 +27,17 @@ impl OS {
             _ => OS::WindowsXP,
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl fmt::Display for OS {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OS::WindowsXP => "XP".to_string(),
-            OS::WindowsVista => "Vista".to_string(),
-            OS::Windows7 => "7".to_string(),
-            OS::Windows8 => "8".to_string(),
-            OS::Windows10 => "10".to_string(),
-            OS::Windows10_20H1 => "10_20h1".to_string(),
+            OS::WindowsXP => write!(f, "XP"),
+            OS::WindowsVista => write!(f, "Vista"),
+            OS::Windows7 => write!(f, "7"),
+            OS::Windows8 => write!(f, "8"),
+            OS::Windows10 => write!(f, "10"),
+            OS::Windows10_20H1 => write!(f, "10_20h1"),
         }
     }
 }
@@ -70,19 +74,21 @@ impl Arch {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        match self {
-            Self::Win32 => "Win32".to_owned(),
-            Self::X64 => "x64".to_owned(),
-            Self::ARM64 => "ARM64".to_owned(),
-        }
-    }
-
-    pub fn to_rust_target(&self) -> Option<String> {
+    pub fn to_rust_target(self) -> Option<String> {
         match self {
             Arch::Win32 => Some("i686-pc-windows-msvc".to_owned()),
             Arch::X64 => Some("x86_64-pc-windows-msvc".to_owned()),
             Arch::ARM64 => Some("aarch64-pc-windows-msvc".to_owned()),
+        }
+    }
+}
+
+impl fmt::Display for Arch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Win32 => write!(f, "Win32"),
+            Self::X64 => write!(f, "x64"),
+            Self::ARM64 => write!(f, "ARM64"),
         }
     }
 }
@@ -164,11 +170,13 @@ impl Subsystem {
             _ => Self::Console,
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl fmt::Display for Subsystem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Subsystem::Windows => "WINDOWS".to_owned(),
-            Subsystem::Console => "CONSOLE".to_owned(),
+            Subsystem::Windows => write!(f, "WINDOWS"),
+            Subsystem::Console => write!(f, "CONSOLE"),
         }
     }
 }
@@ -260,18 +268,18 @@ mod tests {
     #[test]
     fn test_get_arch_from_wrong_args() {
         let args: Vec<&str> = vec![];
-        assert_eq!(get_arch_from_args(&args).is_ok(), false);
+        assert!(!get_arch_from_args(&args).is_ok());
 
         let args = vec!["target", "i686-pc-windows-msvc"];
-        assert_eq!(get_arch_from_args(&args).is_ok(), false);
+        assert!(!get_arch_from_args(&args).is_ok());
     }
 
     #[test]
     fn test_get_is_lib_from_args() {
         let args: Vec<&str> = vec!["--lib"];
-        assert_eq!(get_is_lib_from_args(&args), true);
+        assert!(get_is_lib_from_args(&args));
 
         let args = vec![""];
-        assert_eq!(get_is_lib_from_args(&args), false);
+        assert!(!get_is_lib_from_args(&args));
     }
 }
